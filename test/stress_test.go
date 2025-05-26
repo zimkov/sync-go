@@ -1,8 +1,8 @@
 package test
 
 import (
+	"sync-go/internal/wallet"
 	"testing"
-	"wallet/internal/wallet"
 )
 
 func BenchmarkUnsafe(b *testing.B) {
