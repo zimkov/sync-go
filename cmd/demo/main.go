@@ -2,77 +2,55 @@ package main
 
 import (
 	"fmt"
-	"sync"
-	"sync-go/internal/cache"
-	"sync-go/internal/wallet"
-	"time"
+	"sync-go/internal/cache_test"
+	"testing"
 )
 
-func runTest(walletType string, w wallet.WalletInterface) {
-	var wg sync.WaitGroup
-
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			w.Deposit(1)
-		}()
-	}
-
-	wg.Wait()
-	fmt.Printf("[%-12s] Balance: %d\n", walletType, w.Balance())
+type testRunner interface {
+	RunTest(*testing.T)
 }
 
-func benchmarkCache(c cache.Cache, name string) {
-	start := time.Now()
-	var wg sync.WaitGroup
+func runTestSuite(name string, tests []testRunner) {
+	fmt.Printf("\n=== Тестирование %s ===\n", name)
+	for i, testCase := range tests {
+		t := &capturingT{}
+		testCase.RunTest(t)
 
-	// 1000 операций записи
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			c.Put(fmt.Sprintf("key%d", i), "value")
-		}(i)
+		if t.Failed() {
+			fmt.Printf("[%s] Тест %d: НЕ ПРОЙДЕН\n", name, i+1)
+		} else {
+			fmt.Printf("[%s] Тест %d: ПРОЙДЕН\n", name, i+1)
+		}
 	}
+}
 
-	// 1000 операций чтения
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			c.Get(fmt.Sprintf("key%d", i))
-		}(i)
-	}
+type capturingT struct {
+	failed bool
+}
 
-	wg.Wait()
-	fmt.Printf("[%-12s] Total time: %v\n", name, time.Since(start))
+func (t *capturingT) Error(args ...interface{}) {
+	t.failed = true
+}
+
+func (t *capturingT) Errorf(format string, args ...interface{}) {
+	t.failed = true
+}
+
+func (t *capturingT) FailNow() {
+	t.failed = true
+}
+
+func (t *capturingT) Failed() bool {
+	return t.failed
 }
 
 func main() {
-	fmt.Printf("Тесты для примера с кошельком:\n")
-	runTest("Unsafe", &wallet.UnsafeWallet{})
-	runTest("Coarse", &wallet.CoarseWallet{})
-	runTest("Fine", &wallet.FineWallet{})
-	runTest("Optimistic", &wallet.OptimisticWallet{})
-	runTest("Lazy", &wallet.LazyWallet{})
-	runTest("NonBlocking", &wallet.NonBlockingWallet{})
-
-	fmt.Printf("\n\nТесты для задания с кэшем:\n")
-	// Пример с кэшем
-	implementations := []struct {
-		name     string
-		instance cache.Cache
-	}{
-		{"Coarse", cache.NewCoarseCache()},
-		{"Fine", cache.NewFineCache()},
-		{"Optimistic", cache.NewOptimisticCache()},
-		{"Lazy", cache.NewLazyCache()},
-		{"NonBlocking", cache.NewNonBlockingCache()},
+	cacheTests := []testRunner{
+		&cache_test.CoarseTest{},
+		&cache_test.FineTest{},
+		&cache_test.OptimisticTest{},
+		&cache_test.LazyTest{},
+		&cache_test.NonBlockingTest{},
 	}
-
-	for _, impl := range implementations {
-		benchmarkCache(impl.instance, impl.name)
-		time.Sleep(2 * time.Second) // Сброс состояния
-	}
+	runTestSuite("CACHE PATTERNS", cacheTests)
 }
