@@ -2,6 +2,8 @@ package optimistic
 
 import (
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type OptimisticCache struct {
@@ -30,36 +32,32 @@ func (c *OptimisticCache) Get(key string) (any, uint64) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if e, ok := c.data[key]; ok {
-		return e.value, e.version
+		return e.value, atomic.LoadUint64(&e.version)
 	}
 	return nil, 0
 }
 
 func (c *OptimisticCache) Update(key string, newValue any) bool {
-	// Шаг 1: Читаем данные без блокировки
 	c.mu.RLock()
 	e, ok := c.data[key]
 	if !ok {
 		c.mu.RUnlock()
 		return false
 	}
-	currentVersion := e.version
+	oldVersion := atomic.LoadUint64(&e.version)
 	c.mu.RUnlock()
 
-	// Шаг 2: Подготовка новых данных (может быть долгой операцией)
+	// Имитация долгой операции
+	time.Sleep(time.Millisecond)
 
-	// Шаг 3: Проверка версии с блокировкой
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Перепроверяем существование записи
-	if e, ok := c.data[key]; !ok || e.version != currentVersion {
+	if e := c.data[key]; e == nil || e.version != oldVersion {
 		return false
 	}
 
-	c.data[key] = &entry{
-		value:   newValue,
-		version: currentVersion + 1,
-	}
+	c.data[key].value = newValue
+	atomic.StoreUint64(&c.data[key].version, oldVersion+1)
 	return true
 }
